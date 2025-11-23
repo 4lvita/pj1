@@ -1,118 +1,207 @@
 import pandas as pd
 import chardet
-from playwright.sync_api import sync_playwright
-from urllib.parse import urljoin
+import asyncio
 import os
+import json
+from playwright.async_api import async_playwright
+from urllib.parse import urljoin
 
-DOWNLOAD_DIR = "./data"
+# --- 1. 설정 및 경로 ---
+BASE_DATA_DIR = "./data"
+DOWNLOAD_DIR = os.path.join(BASE_DATA_DIR, "attachments")
+CSV_FILEPATH = os.path.join(BASE_DATA_DIR, 'welfare_info_20250722.csv')
+JSON_SAVE_PATH = os.path.join(BASE_DATA_DIR, "bokjiro_scraped_data.json")
+
+TIMEOUT_MS = 5000 
+CONCURRENCY_LIMIT = 5
+BATCH_SIZE = 10  # 데이터를 저장하는 주기 (10개씩 처리하고 저장)
+
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-filepath = os.path.join(DOWNLOAD_DIR, 'welfare_info_20250722.csv')
-
-with open(filepath, 'rb') as f:
-    data = f.read(100000)
-
-result = chardet.detect(data)
-encoding = result['encoding']
-
+# --- 2. CSV 파일 읽기 ---
+print("데이터 파일 로딩 중...")
 try:
-    df = pd.read_csv(filepath, encoding=encoding)
+    with open(CSV_FILEPATH, 'rb') as f:
+        data = f.read(100000)
+    result = chardet.detect(data)
+    encoding = result['encoding']
+    df = pd.read_csv(CSV_FILEPATH, encoding=encoding)
+    print(f"CSV 로드 완료. 총 {len(df)}개의 서비스가 있습니다.")
 except Exception as e:
-    print(f"'{filepath}' File Read Error {e}")
+    print(f"파일 읽기 실패: {e}")
     exit()
 
-def scrape_tabs(url: str) -> dict:
-    data = {
-        "url": url,
-        "지원대상":"",
-        "서비스_내용":"",
-        "신청방법":"",
-        "추가정보":"",
-        "files":[]
-    }
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+# --- 3. 기존 데이터 로드 (이어하기 기능) ---
+def load_existing_data():
+    if os.path.exists(JSON_SAVE_PATH):
         try:
-            page.goto(url, timeout=10000)
-            page.wait_for_load_state('domcontentloaded')
+            with open(JSON_SAVE_PATH, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # 중복 체크를 위해 완료된 ID들을 Set으로 만듦 (검색 속도 O(1))
+                finished_ids = {item['service_id'] for item in data}
+                print(f"🔄 기존 데이터 파일 발견: {len(data)}건이 이미 완료되었습니다.")
+                return data, finished_ids
+        except Exception as e:
+            print(f"⚠️ 기존 파일 읽기 오류 (새로 시작): {e}")
+            return [], set()
+    else:
+        print("✨ 기존 데이터 파일이 없습니다. 새로 시작합니다.")
+        return [], set()
+
+# --- 4. 비동기 크롤링 함수 (단일) ---
+async def scrape_single_service(context, sem, row, base_download_path):
+    async with sem: 
+        service_id = str(row['서비스아이디'])
+        service_name = str(row['서비스명'])
+        url = row['서비스URL']
+        
+        service_data = {
+            "service_id": service_id,
+            "service_name": service_name,
+            "url": url,
+            "summary": str(row['서비스요약']),
+            "department": str(row['소관부처명']),
+            "지원대상": "",
+            "서비스 내용": "",
+            "신청방법": "",
+            "추가정보": "",
+            "files": []
+        }
+
+        if pd.isna(url) or pd.isna(service_id):
+            return None
+
+        page = await context.new_page()
+        
+        try:
+            # 페이지 이동
+            try:
+                await page.goto(url, timeout=10000)
+                await page.wait_for_load_state('networkidle', timeout=10000)
+            except Exception:
+                # print(f"  ⚠️ [{service_id}] 페이지 로드 타임아웃/오류 -> 건너뜀")
+                await page.close()
+                return service_data # 부분 데이터라도 반환 (나중에 채울 수도 있으므로)
 
             tabs = {
-                "지원대상": page.locator("#uuid-iw"),
-                "서비스 내용": page.locator("#uuid-ix"),
-                "신청방법": page.locator("#uuid-iy"),
-                "추가정보": page.locator("#uuid-iz")
+                "지원대상": page.locator(".custom-tabfolder .tabfolder-item").filter(has_text="지원대상"),
+                "서비스 내용": page.locator(".custom-tabfolder .tabfolder-item").filter(has_text="서비스 내용"),
+                "신청방법": page.locator(".custom-tabfolder .tabfolder-item").filter(has_text="신청방법"),
+                "추가정보": page.locator(".custom-tabfolder .tabfolder-item").filter(has_text="추가정보")
             }
-
-            content_pane_selector = 'div[data-ndid="ij"] > div[role="tabpanel"]:not([style*="display: none"])'
+            
+            content_pane_selector = '.cl-tabfolder-body > div[role="tabpanel"]:visible'
             
             for tab_name, tab_locator in tabs.items():
                 try:
-                    print(f"[{tab_name}] 탭 클릭 중...")
-                    tab_locator.click()
-                    page.wait_for_timeout(1000) 
+                    if await tab_locator.count() == 0:
+                        continue
+                        
+                    await tab_locator.click(timeout=TIMEOUT_MS)
+                    await page.wait_for_timeout(1000)
                     
                     visible_pane = page.locator(content_pane_selector)
-                    tab_text = visible_pane.inner_text()
-                    data[tab_name] = tab_text.strip()
+                    
+                    try:
+                        await visible_pane.wait_for(state="visible", timeout=TIMEOUT_MS)
+                        tab_text = await visible_pane.inner_text()
+                        service_data[tab_name] = tab_text.strip()
+                    except Exception:
+                        continue
 
-                    # --- 3. 여기가 핵심 수정 부분입니다 ---
                     if tab_name == "추가정보":
-                        # HTML 구조에 맞는 더 정확한 선택자 사용
-                        # 'aria-label'에 "파일다운로드"가 포함된 <a> 태그를 찾습니다.
                         download_buttons = visible_pane.locator('a[aria-label*="파일다운로드"]')
+                        count = await download_buttons.count()
                         
-                        button_count = download_buttons.count()
-                        if button_count > 0:
-                            print(f"  > {button_count}개의 다운로드 버튼 발견.")
-
-                        for i in range(button_count):
+                        for i in range(count):
                             button = download_buttons.nth(i)
-                            
-                            # 파일명 로깅 (title 속성에서 가져오기)
-                            filename_hint = button.get_attribute("title")
-                            print(f"  > '{filename_hint}' 파일 다운로드 시도...")
-
-                            # --- Playwright 다운로드 처리 ---
-                            # 1. 다운로드 이벤트를 기다리는 리스너를 먼저 설정
-                            with page.expect_download() as download_info:
-                                # 2. 다운로드를 트리거하는 버튼 클릭
-                                button.click()
-                            
-                            download = download_info.value
-                            
-                            # 3. 다운로드된 파일 저장
-                            # (suggested_filename은 실제 다운로드되는 파일명입니다)
-                            save_path = os.path.join(DOWNLOAD_DIR, download.suggested_filename)
-                            download.save_as(save_path)
-                            
-                            print(f"  > 파일 저장 완료: {save_path}")
-                            data["files"].append(save_path) # 로컬 경로 저장
+                            try:
+                                async with page.expect_download(timeout=TIMEOUT_MS) as download_info:
+                                    await button.click(timeout=TIMEOUT_MS)
                                 
-                except Exception as e:
-                    print(f"  > [{tab_name}] 탭 처리 중 오류: {e}")
+                                download = await download_info.value
+                                original_filename = download.suggested_filename
+                                new_filename = f"{service_id}_{original_filename}"
+                                save_path = os.path.join(base_download_path, new_filename)
+                                
+                                # 이미 파일이 있으면 다운로드 스킵 (선택사항)
+                                if not os.path.exists(save_path):
+                                    await download.save_as(save_path)
+                                    print(f"    💾 저장: {new_filename}")
+                                else:
+                                    # print(f"    파일 이미 존재: {new_filename}")
+                                    pass
+                                    
+                                service_data["files"].append(save_path)
+                            except Exception:
+                                pass
+                                
+                except Exception:
+                    continue
 
-        except Exception as e:
-            print(f"페이지 로드/처리 중 심각한 오류: {e}")
-        finally:
-            browser.close()
+            print(f"✅ 완료: {service_id} - {service_name}")
             
-    return data
+        except Exception as e:
+            print(f"❌ 오류 발생 ({service_id}): {e}")
+        finally:
+            await page.close()
+            
+        return service_data
 
-if not df.empty:
-    url = df.iloc[0]['서비스URL']
-    test_url = "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00003170"
-    print(f"테스트 크롤링 시작: {test_url}")
+# --- 5. 메인 실행 함수 ---
+async def main():
+    # 1. 기존 데이터 로드
+    all_results, finished_ids = load_existing_data()
     
-    scraped_data = scrape_tabs(test_url)
-    
-    print("\n--- 크롤링 결과 ---")
-    print(f"URL: {scraped_data['url']}")
-    print(f"\n[지원대상]:\n{scraped_data['지원대상'][:150]}...")
-    print(f"\n[서비스 내용]:\n{scraped_data['서비스 내용'][:150]}...")
-    print(f"\n[신청방법]:\n{scraped_data['신청방법'][:150]}...")
-    print(f"\n[추가정보]:\n{scraped_data['추가정보'][:150]}...")
-    print(f"\n[첨부파일]: {scraped_data['files']}")
-else:
-    print("CSV 파일이 비어있거나 로드에 실패했습니다.") 
+    # 2. 아직 처리하지 않은 행만 필터링
+    target_rows = []
+    for index, row in df.iterrows():
+        s_id = str(row['서비스아이디'])
+        if s_id not in finished_ids:
+            target_rows.append(row)
+            
+    total_target = len(target_rows)
+    print(f"🚀 새로 처리할 데이터: {total_target}건")
+
+    if total_target == 0:
+        print("모든 데이터 처리가 완료되었습니다.")
+        return
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(accept_downloads=True)
+        sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
+        
+        # 3. 배치 단위(BATCH_SIZE)로 나누어 실행 및 저장
+        # 한 번에 다 돌리지 않고 끊어서 저장해야 중단 시 손실을 줄임
+        for i in range(0, total_target, BATCH_SIZE):
+            batch_rows = target_rows[i : i + BATCH_SIZE]
+            tasks = []
+            
+            print(f"\n--- 배치 시작 ({i+1} ~ {min(i+BATCH_SIZE, total_target)} / {total_target}) ---")
+            
+            for row in batch_rows:
+                task = scrape_single_service(context, sem, row, DOWNLOAD_DIR)
+                tasks.append(task)
+            
+            # 배치 실행
+            results = await asyncio.gather(*tasks)
+            
+            # 유효한 결과만 추가
+            valid_batch_results = [r for r in results if r is not None]
+            all_results.extend(valid_batch_results)
+            
+            # 4. 중간 저장 (핵심)
+            try:
+                with open(JSON_SAVE_PATH, 'w', encoding='utf-8') as f:
+                    json.dump(all_results, f, ensure_ascii=False, indent=4)
+                print(f"💾 현재까지 총 {len(all_results)}건 저장 완료.")
+            except Exception as e:
+                print(f"❌ 저장 중 오류 발생: {e}")
+
+        await browser.close()
+        print(f"\n🎉 모든 작업이 종료되었습니다. (최종 {len(all_results)}건)")
+
+# --- 6. 실행 ---
+if __name__ == "__main__":
+    asyncio.run(main())

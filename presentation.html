@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welfare AI Agent - MCP Architecture</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #020617;
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; overflow: hidden; color: white;
+        }
+
+        #presentation {
+            width: 1280px; height: 720px;
+            background: #0f172a;
+            position: relative;
+            box-shadow: 0 0 60px rgba(0,0,0,0.6);
+            overflow: hidden;
+            border: 1px solid #1e293b;
+        }
+
+        .slide {
+            display: none; width: 100%; height: 100%;
+            padding: 50px 70px; box-sizing: border-box;
+            flex-direction: column;
+            animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .slide.active { display: flex; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .bg-network {
+            position: absolute; inset: 0;
+            background-image: radial-gradient(rgba(99, 102, 241, 0.15) 1px, transparent 1px);
+            background-size: 30px 30px;
+            opacity: 0.4; pointer-events: none;
+        }
+
+        h1 { font-size: 44px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 12px; }
+        h2 { font-size: 14px; color: #818cf8; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; margin-bottom: 8px; }
+        
+        /* Architecture Node */
+        .arch-node {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            backdrop-filter: blur(5px);
+            border-radius: 12px; padding: 20px;
+            text-align: center;
+            position: relative;
+            box-shadow: 0 10px 20px -5px rgba(0,0,0,0.3);
+        }
+        .arch-node strong { display: block; font-size: 16px; color: white; margin-bottom: 5px; }
+        .arch-node span { font-size: 12px; color: #94a3b8; }
+        
+        /* Connection Lines */
+        .connector {
+            position: absolute; background: #475569; z-index: 0;
+        }
+        
+        /* Code Block */
+        .code-block {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px; color: #a5b4fc;
+            background: #1e1e2e; padding: 15px;
+            border-radius: 8px; border: 1px solid #313244;
+            line-height: 1.6;
+        }
+
+        /* Agent Chat */
+        .chat-bubble {
+            background: #1e293b; padding: 12px 16px; border-radius: 12px; font-size: 13px;
+            margin-bottom: 10px; max-width: 90%; line-height: 1.5;
+            border: 1px solid #334155;
+        }
+        .chat-system { border-left: 3px solid #10b981; color: #e2e8f0; }
+        
+        .tool-badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 2px 8px; border-radius: 4px;
+            font-size: 10px; font-weight: bold; font-family: 'JetBrains Mono';
+            background: #312e81; color: #a5b4fc; border: 1px solid #4338ca;
+            margin-right: 4px;
+        }
+
+        .controls { position: absolute; bottom: 30px; right: 40px; display: flex; gap: 15px; z-index: 50; }
+        .btn { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; padding: 10px 20px; border-radius: 30px; cursor: pointer; transition: 0.2s; }
+        .btn:hover { background: #6366f1; border-color: #6366f1; }
+        .page-num { position: absolute; bottom: 40px; left: 40px; color: #64748b; font-family: 'JetBrains Mono'; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+    <div id="presentation">
+        <div class="bg-network"></div>
+
+        <!-- Slide 1: Title -->
+        <div class="slide active" style="justify-content: center;">
+            <div class="max-w-5xl z-10">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-900/50 border border-indigo-500/50 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-6">
+                    <span class="w-2 h-2 rounded-full bg-indigo-400 animate-pulse"></span> Autonomous Welfare System
+                </div>
+                <h1 class="text-7xl mb-6 leading-tight">
+                    Welfare Agent <br>
+                    with <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">MCP Architecture</span>
+                </h1>
+                <p class="text-2xl text-slate-400 font-light mb-12 max-w-3xl leading-relaxed">
+                    "입력하지 마세요, 에이전트가 직접 확인합니다."<br>
+                    <strong>외부 데이터 연결(MCP)</strong>을 통한 완전 자동화 복지 플랫폼
+                </p>
+                <div class="grid grid-cols-3 gap-8 border-t border-slate-800 pt-8 max-w-3xl">
+                    <div><div class="text-slate-500 text-xs uppercase font-bold">Core Concept</div><div class="text-white mt-1">Autonomous Agent</div></div>
+                    <div><div class="text-slate-500 text-xs uppercase font-bold">Protocol</div><div class="text-white mt-1">Model Context Protocol (MCP)</div></div>
+                    <div><div class="text-slate-500 text-xs uppercase font-bold">Connectivity</div><div class="text-white mt-1">MyData & Public API</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 2: Paradigm Shift -->
+        <div class="slide">
+            <h2>01. Paradigm Shift</h2>
+            <h1>Calculator vs. True Agent</h1>
+            <p class="mb-10 text-slate-400">사용자가 일일이 입력하는 '계산기'가 아닙니다. 스스로 데이터를 찾아오는 '비서'입니다.</p>
+            
+            <div class="grid grid-cols-2 gap-12 h-full items-center">
+                <!-- Old Way -->
+                <div class="p-8 rounded-2xl border border-slate-700 bg-slate-900/50 opacity-60">
+                    <h3 class="text-slate-500 mb-4 text-xl"><i class="fa-solid fa-calculator mr-2"></i>기존 방식 (Calculator)</h3>
+                    <div class="space-y-4">
+                        <div class="bg-slate-800 p-4 rounded-lg text-sm text-slate-400">
+                            <p class="mb-2">👤 사용자: (직접 입력)</p>
+                            <ul class="list-disc pl-4 space-y-1">
+                                <li>연소득: 3,500만원</li>
+                                <li>보증금: 1억 5천만원</li>
+                                <li>주택유형: 오피스텔</li>
+                            </ul>
+                        </div>
+                        <div class="text-center text-slate-600"><i class="fa-solid fa-arrow-down"></i></div>
+                        <div class="bg-slate-800 p-4 rounded-lg text-sm text-slate-300">
+                            🤖 시스템: 대출 한도는 1.2억입니다.
+                        </div>
+                    </div>
+                    <p class="mt-4 text-xs text-red-400 text-center">*사용자 입력 오류 시 결과도 오류</p>
+                </div>
+
+                <!-- New Way -->
+                <div class="p-8 rounded-2xl border-2 border-indigo-500 bg-indigo-900/10 relative">
+                    <div class="absolute -top-3 right-6 bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full">OUR SOLUTION</div>
+                    <h3 class="text-indigo-400 mb-4 text-xl"><i class="fa-solid fa-robot mr-2"></i>제안 방식 (AI Agent)</h3>
+                    <div class="space-y-4">
+                        <div class="bg-slate-800 p-4 rounded-lg text-sm text-white">
+                            👤 사용자: "이 집 전세 대출 될까?" (주소만 입력)
+                        </div>
+                        <div class="text-center text-indigo-500 animate-pulse"><i class="fa-solid fa-bolt"></i> Agent Working...</div>
+                        <div class="bg-slate-900 p-4 rounded-lg border border-indigo-500/30 text-xs font-mono text-indigo-200">
+                            > [MCP] Call `molit_api` (실거래가 조회)<br>
+                            > [MCP] Call `court_registry` (등기부 조회)<br>
+                            > [Reasoning] 선순위 채권 분석...<br>
+                            > [Output] "위험합니다. 융자가 너무 많아요."
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: Architecture -->
+        <div class="slide">
+            <h2>02. System Architecture</h2>
+            <h1>Agent with MCP (Model Context Protocol)</h1>
+            <p class="mb-8 text-slate-400">LLM(두뇌)과 외부 데이터/도구(손발)를 표준 프로토콜(MCP)로 연결하여 확장성을 확보합니다.</p>
+            
+            <div class="relative h-full flex items-center justify-center">
+                <!-- LLM Brain -->
+                <div class="arch-node w-48 h-48 flex flex-col justify-center z-10 border-indigo-500 shadow-[0_0_30px_rgba(99,102,241,0.3)]">
+                    <i class="fa-solid fa-brain text-4xl text-indigo-400 mb-2"></i>
+                    <strong class="text-indigo-300">LLM Brain</strong>
+                    <span>Reasoning & Planning</span>
+                </div>
+
+                <!-- MCP Layer -->
+                <div class="absolute w-[600px] h-[300px] border-2 border-dashed border-slate-600 rounded-[40px] -z-0 flex justify-between items-center px-8">
+                    <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-800 px-4 text-slate-400 text-sm font-bold">Model Context Protocol (MCP) Layer</div>
+                    
+                    <!-- Tools -->
+                    <div class="flex flex-col gap-6 h-full justify-center w-full">
+                        <div class="flex justify-between w-full">
+                            <!-- Tool 1 -->
+                            <div class="arch-node w-36 bg-slate-900">
+                                <i class="fa-solid fa-building-columns text-2xl text-emerald-400 mb-2"></i>
+                                <strong>Public Data</strong>
+                                <span>국토부/복지로 API</span>
+                            </div>
+                            <!-- Tool 2 -->
+                            <div class="arch-node w-36 bg-slate-900">
+                                <i class="fa-solid fa-id-card text-2xl text-blue-400 mb-2"></i>
+                                <strong>MyData</strong>
+                                <span>국세청/건보공단</span>
+                            </div>
+                        </div>
+                        <div class="flex justify-between w-full">
+                            <!-- Tool 3 -->
+                            <div class="arch-node w-36 bg-slate-900">
+                                <i class="fa-solid fa-file-pdf text-2xl text-red-400 mb-2"></i>
+                                <strong>Doc Parser</strong>
+                                <span>HWP/PDF OCR</span>
+                            </div>
+                            <!-- Tool 4 -->
+                            <div class="arch-node w-36 bg-slate-900">
+                                <i class="fa-solid fa-pen-nib text-2xl text-purple-400 mb-2"></i>
+                                <strong>Auto Filler</strong>
+                                <span>신청서 자동작성</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Connectors -->
+                <div class="absolute w-1 h-24 bg-indigo-500 top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-0 opacity-0"></div> 
+            </div>
+        </div>
+
+        <!-- Slide 4: Scenario A - Housing -->
+        <div class="slide">
+            <h2>03. Agent Scenario A</h2>
+            <h1>부동산 권리분석 에이전트 (Safe Contract)</h1>
+            <div class="flex gap-8 mt-6 h-full">
+                <div class="w-1/2 flex flex-col justify-center gap-4">
+                    <div class="p-4 bg-slate-800 border-l-4 border-emerald-500 rounded-r-lg">
+                        <h3 class="text-sm text-emerald-400 mb-1">Goal</h3>
+                        <p class="text-sm">사용자가 <strong>주소</strong>만 입력하면, 전세 사기 위험도와 대출 가능 여부를 자동 진단.</p>
+                    </div>
+                    <div class="p-4 bg-slate-800 border-l-4 border-emerald-500 rounded-r-lg">
+                        <h3 class="text-sm text-emerald-400 mb-1">Connected Tools (MCP)</h3>
+                        <ul class="text-sm text-slate-300 space-y-2">
+                            <li><span class="tool-badge">GET</span> <strong>국토부 실거래가 API:</strong> 주변 시세 파악</li>
+                            <li><span class="tool-badge">GET</span> <strong>인터넷등기소 API:</strong> 근저당/압류 확인</li>
+                            <li><span class="tool-badge">GET</span> <strong>건축물대장 API:</strong> 위반건축물 여부</li>
+                            <li><span class="tool-badge">RAG</span> <strong>HUG 규정집(PDF):</strong> 반환보증 가입조건 대조</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="w-1/2 bg-black rounded-xl border border-slate-700 p-4 font-mono text-xs overflow-hidden relative">
+                    <div class="text-slate-500 mb-2"># Agent Execution Log</div>
+                    <div class="space-y-2">
+                        <p><span class="text-blue-400">User:</span> "서울 강서구 화곡동 00빌라 201호, 전세 2억 안전해?"</p>
+                        <p class="text-yellow-500">[Agent] Thinking...</p>
+                        <p class="text-slate-400">1. Calling tool: <span class="text-white">fetch_market_price(address)</span></p>
+                        <p class="text-green-400">   -> Result: Avg Price 2.1억</p>
+                        <p class="text-slate-400">2. Calling tool: <span class="text-white">fetch_registry_status(address)</span></p>
+                        <p class="text-red-400">   -> Result: 근저당 1.5억 설정됨 (위험)</p>
+                        <p class="text-yellow-500">[Agent] Reasoning: (2.1억 * 70%) < (2억 + 1.5억)</p>
+                        <p class="text-white mt-2"><strong>[Final Answer]</strong> 🚨 위험합니다! <br>집값 대비 부채 비율이 너무 높습니다.<br>HUG 반환보증 가입이 거절될 확률이 99%입니다.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 5: Scenario B - Finance -->
+        <div class="slide">
+            <h2>04. Agent Scenario B</h2>
+            <h1>금융/복지 자격진단 에이전트 (Zero-Input)</h1>
+            <div class="flex gap-8 mt-6 h-full">
+                <div class="w-1/2 flex flex-col justify-center gap-4">
+                    <div class="p-4 bg-slate-800 border-l-4 border-blue-500 rounded-r-lg">
+                        <h3 class="text-sm text-blue-400 mb-1">Goal</h3>
+                        <p class="text-sm">복잡한 조건(소득, 자산, 이력) 입력을 <strong>마이데이터 연동</strong>으로 자동화하여 즉시 결과 도출.</p>
+                    </div>
+                    <div class="p-4 bg-slate-800 border-l-4 border-blue-500 rounded-r-lg">
+                        <h3 class="text-sm text-blue-400 mb-1">Connected Tools (MCP)</h3>
+                        <ul class="text-sm text-slate-300 space-y-2">
+                            <li><span class="tool-badge">GET</span> <strong>건강보험공단 API:</strong> 재직기간, 소득분위 추정</li>
+                            <li><span class="tool-badge">GET</span> <strong>주민등록정보 API:</strong> 세대주, 부양가족 확인</li>
+                            <li><span class="tool-badge">RAG</span> <strong>복지로 JSON DB:</strong> 1,000여개 정책 매칭</li>
+                            <li><span class="tool-badge">ACT</span> <strong>Form Filler:</strong> HWP 신청서 자동 기입</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="w-1/2 bg-slate-900 rounded-xl border border-slate-700 p-6 flex flex-col relative">
+                    <h3 class="text-white font-bold mb-4">Agent Workflow</h3>
+                    
+                    <div class="flex items-center gap-3 mb-4 opacity-50">
+                        <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center">1</div>
+                        <div class="text-sm text-slate-300">사용자 동의 (MyData 연결)</div>
+                    </div>
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center animate-pulse">2</div>
+                        <div class="text-sm text-white font-bold">Data Fetching & Analysis</div>
+                    </div>
+                    <div class="pl-11 text-xs text-blue-300 mb-4 font-mono bg-slate-950 p-3 rounded">
+                        - Income: 32,000,000 KRW<br>
+                        - Age: 29 (Youth)<br>
+                        - House: None (Homeless)
+                    </div>
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">3</div>
+                        <div class="text-sm text-white">정책 매칭 결과 도출</div>
+                    </div>
+                    <div class="p-3 bg-emerald-900/30 border border-emerald-500/30 rounded-lg">
+                        <p class="text-sm text-emerald-300 font-bold">✅ 청년전용 버팀목 전세자금</p>
+                        <p class="text-xs text-slate-400 mt-1">"고객님은 연소득 5천만원 이하, 무주택 세대주 요건을 충족합니다. 금리 2.2% 적용 예상됩니다."</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 6: Tech Spec -->
+        <div class="slide">
+            <h2>05. Tech Specification</h2>
+            <h1>MCP Server Implementation</h1>
+            <p class="mb-6">외부 데이터를 에이전트가 이해할 수 있는 형태로 변환하는 <strong>Custom MCP Server</strong> 구축</p>
+
+            <div class="grid grid-cols-2 gap-8 h-full">
+                <div class="code-block">
+<span class="text-slate-500">// mcp_server_molit.py (부동산 API 연결)</span>
+
+<span class="text-purple-400">@mcp.tool()</span>
+<span class="text-blue-400">async def</span> <span class="text-yellow-300">fetch_real_estate_data</span>(address: str) -> dict:
+    <span class="text-slate-400">"""
+    국토부 실거래가 API를 호출하여 
+    해당 주소의 최근 매매/전세가를 반환합니다.
+    """</span>
+    api_key = os.getenv("MOLIT_KEY")
+    data = <span class="text-blue-400">await</span> request.get(API_URL, params={...})
+    
+    <span class="text-blue-400">return</span> {
+        "market_price": data["price"],
+        "last_trade_date": data["date"],
+        "jeonse_ratio": calculate_ratio(data)
+    }
+                </div>
+
+                <div class="flex flex-col gap-4">
+                    <div class="p-4 bg-slate-800 rounded-lg border-l-4 border-purple-500">
+                        <h3 class="text-sm text-purple-400 font-bold">1. Welfare MCP Server</h3>
+                        <p class="text-xs text-slate-400 mt-1">복지로 크롤링 데이터(JSON)와 HUG/LH 공고문(PDF)을 벡터화하여 검색 도구로 제공</p>
+                    </div>
+                    <div class="p-4 bg-slate-800 rounded-lg border-l-4 border-blue-500">
+                        <h3 class="text-sm text-blue-400 font-bold">2. Real Estate MCP Server</h3>
+                        <p class="text-xs text-slate-400 mt-1">공공데이터포털(국토부, 법원 등기소) API를 래핑하여 실시간 데이터 조회 도구로 제공</p>
+                    </div>
+                    <div class="p-4 bg-slate-800 rounded-lg border-l-4 border-emerald-500">
+                        <h3 class="text-sm text-emerald-400 font-bold">3. Document MCP Server</h3>
+                        <p class="text-xs text-slate-400 mt-1">HWP/PDF 신청서 양식을 파싱하고, 사용자 데이터를 주입(Fill)하여 파일로 반환하는 도구</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 7: Roadmap -->
+        <div class="slide">
+            <h2>06. Roadmap</h2>
+            <h1>Evolution to Autonomous Agent</h1>
+            <div class="mt-10 relative h-full">
+                <div class="absolute top-[20px] left-[20px] bottom-[20px] w-1 bg-slate-800"></div>
+                
+                <!-- Step 1 -->
+                <div class="ml-12 mb-8 relative group">
+                    <div class="absolute -left-[54px] top-0 w-12 h-12 bg-slate-900 border-4 border-blue-600 rounded-full flex items-center justify-center font-bold text-blue-500 z-10">1</div>
+                    <div class="bg-slate-800/50 p-5 rounded-xl border border-slate-700 group-hover:border-blue-500 transition-colors">
+                        <div class="flex justify-between mb-1">
+                            <h3 class="text-white text-lg">Basic RAG Agent</h3>
+                            <span class="tag tag-blue">Current</span>
+                        </div>
+                        <p class="text-sm text-slate-400">복지로 데이터(JSON) 기반 단순 질의응답, 정적 데이터 검색</p>
+                    </div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="ml-12 mb-8 relative group">
+                    <div class="absolute -left-[54px] top-0 w-12 h-12 bg-slate-900 border-4 border-indigo-600 rounded-full flex items-center justify-center font-bold text-indigo-500 z-10">2</div>
+                    <div class="bg-slate-800/50 p-5 rounded-xl border border-slate-700 group-hover:border-indigo-500 transition-colors">
+                        <div class="flex justify-between mb-1">
+                            <h3 class="text-white text-lg">MCP Integration (Read-Only)</h3>
+                            <span class="tag tag-purple">Phase 2</span>
+                        </div>
+                        <p class="text-sm text-slate-400">부동산/금융 API 연결, 실시간 데이터 기반 조건 조회 및 위험 진단</p>
+                    </div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="ml-12 relative group">
+                    <div class="absolute -left-[54px] top-0 w-12 h-12 bg-slate-900 border-4 border-emerald-600 rounded-full flex items-center justify-center font-bold text-emerald-500 z-10">3</div>
+                    <div class="bg-slate-800/50 p-5 rounded-xl border border-slate-700 group-hover:border-emerald-500 transition-colors">
+                        <div class="flex justify-between mb-1">
+                            <h3 class="text-white text-lg">Action Agent (Read & Write)</h3>
+                            <span class="tag tag-green">Phase 3</span>
+                        </div>
+                        <p class="text-sm text-slate-400">신청서 자동 작성(HWP), 기관 접수 대행, 사용자 맞춤형 능동 알림 수행</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 8: Closing -->
+        <div class="slide">
+            <div class="flex flex-col items-center justify-center h-full text-center z-10">
+                <div class="w-24 h-24 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-full flex items-center justify-center text-white text-5xl mb-8 shadow-[0_0_40px_rgba(99,102,241,0.6)]">
+                    <i class="fa-solid fa-link"></i>
+                </div>
+                <h1 class="text-6xl font-bold mb-6">The Real Agent</h1>
+                <p class="text-2xl text-slate-300 max-w-4xl leading-relaxed mb-12">
+                    "데이터를 검색하는 것을 넘어,<br>
+                    <strong>외부와 연결되어(MCP) 실질적인 문제를 해결하는 에이전트</strong>를 만듭니다."
+                </p>
+                <div class="flex gap-4">
+                    <button class="px-8 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-full text-white font-bold transition-colors shadow-lg">
+                        View Demo
+                    </button>
+                    <button class="px-8 py-3 border border-slate-600 hover:border-white rounded-full text-slate-400 hover:text-white transition-colors">
+                        Github Repo
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Controls -->
+        <div class="progress-bar" id="progressBar"></div>
+        <div class="page-num" id="pageIndicator">01 / 08</div>
+        <div class="controls">
+            <button class="btn" onclick="prevSlide()"><i class="fa-solid fa-arrow-left"></i> Prev</button>
+            <button class="btn" onclick="nextSlide()">Next <i class="fa-solid fa-arrow-right"></i></button>
+        </div>
+
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const progressBar = document.getElementById('progressBar');
+        const pageIndicator = document.getElementById('pageIndicator');
+
+        function updateSlide() {
+            slides.forEach((slide, index) => {
+                slide.classList.remove('active');
+                if (index === currentSlide) {
+                    slide.classList.add('active');
+                }
+            });
+            const progress = ((currentSlide + 1) / slides.length) * 100;
+            progressBar.style.width = `${progress}%`;
+            pageIndicator.innerText = `0${currentSlide + 1} / 0${slides.length}`;
+        }
+
+        function nextSlide() { if (currentSlide < slides.length - 1) { currentSlide++; updateSlide(); } }
+        function prevSlide() { if (currentSlide > 0) { currentSlide--; updateSlide(); } }
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === 'Space') nextSlide();
+            if (e.key === 'ArrowLeft') prevSlide();
+        });
+
+        updateSlide();
+    </script>
+</body>
+</html>
